@@ -1,137 +1,100 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from groq import Groq
 import os
+from groq import Groq
 from datetime import datetime
 
-# ----------------------------
-# Setup Groq Client
-# ----------------------------
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# ----------------- PAGE CONFIG -----------------
+st.set_page_config(page_title="AI Expense Analyzer", layout="wide")
 
-# ----------------------------
-# App Title
-# ----------------------------
-st.title("💸 AI Expense Analyzer")
-st.write("Track expenses, view charts, and get smart AI-powered spending insights.")
-
-# ----------------------------
-# Session State Initialization
-# ----------------------------
+# ----------------- INITIALIZATION -----------------
 if "expenses" not in st.session_state:
-    st.session_state.expenses = pd.DataFrame(columns=["Amount", "Category", "Description", "Date"])
+    st.session_state.expenses = pd.DataFrame(columns=["Date", "Amount", "Category", "Description"])
 
-# ----------------------------
-# Expense Input Form
-# ----------------------------
-st.header("➕ Add Expense")
+# ----------------- GROQ SETUP -----------------
+api_key = os.getenv("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")
+if not api_key:
+    st.warning("⚠️ Please set your GROQ_API_KEY environment variable in Colab.")
+client = Groq(api_key=api_key)
 
-with st.form("expense_form"):
-    amount = st.number_input("Expense Amount", min_value=1.0, format="%.2f")
-    description = st.text_input("Description (e.g., Dinner at Italian restaurant)")
-    date = st.date_input("Date", value=datetime.today())
-    submit = st.form_submit_button("Add Expense")
+# ----------------- UI HEADER -----------------
+st.title("💸 AI Expense Analyzer")
+st.markdown("Track your spending, visualize patterns, and get AI insights powered by **Groq** and **Streamlit**.")
 
-# ----------------------------
-# LLM Categorization
-# ----------------------------
-def categorize_expense(description):
-    """Use Groq LLM to infer expense category."""
-    prompt = f"""
-    The user entered this expense description: "{description}"
+# ----------------- ADD EXPENSE SECTION -----------------
+with st.expander("➕ Add Expense", expanded=True):
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        date = st.date_input("Date", datetime.now())
+    with c2:
+        amount = st.number_input("Amount (USD)", min_value=0.0, step=1.0)
+    with c3:
+        category = st.text_input("Category (e.g., Food, Transport, Rent)")
+    desc = st.text_area("Description")
 
-    Classify the category. Choose one from:
-    Food, Groceries, Travel, Shopping, Entertainment, Bills, Health, Education, Other.
-
-    Return ONLY the category name.
-    """
-
-    response = client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.3-70b-versatile"
-    )
-
-    return response.choices[0].message.content.strip()
-
-# ----------------------------
-# Add Expense to Table
-# ----------------------------
-if submit:
-    if description.strip() == "":
-        st.error("Please enter a description.")
-    else:
-        category = categorize_expense(description)
-        new_row = pd.DataFrame(
-            [[amount, category, description, str(date)]],
-            columns=["Amount", "Category", "Description", "Date"]
-        )
+    if st.button("Add Expense"):
+        new_row = pd.DataFrame([[date, amount, category, desc]], columns=["Date", "Amount", "Category", "Description"])
         st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
-        st.success(f"Expense added! Category detected: **{category}**")
+        st.success("✅ Expense added!")
 
-# ----------------------------
-# Expense Table
-# ----------------------------
-st.header("📊 All Expenses")
-st.dataframe(st.session_state.expenses)
-
-# ----------------------------
-# Charts Section
-# ----------------------------
+# ----------------- SHOW EXPENSES -----------------
 if not st.session_state.expenses.empty:
-    st.header("📈 Expense Charts")
+    df = st.session_state.expenses
+    st.subheader("📊 Expense Table")
+    st.dataframe(df, use_container_width=True)
 
-    # Bar Chart by Category
-    category_totals = st.session_state.expenses.groupby("Category")["Amount"].sum()
+    # Charts
+    st.subheader("📈 Visualizations")
+    t1, t2 = st.tabs(["Bar Chart", "Pie Chart"])
 
-    st.subheader("Bar Chart — Category-wise Spending")
-    fig1, ax1 = plt.subplots()
-    ax1.bar(category_totals.index, category_totals.values)
-    ax1.set_ylabel("Amount")
-    ax1.set_xlabel("Category")
-    ax1.set_title("Total Spending by Category")
-    st.pyplot(fig1)
+    with t1:
+        fig, ax = plt.subplots()
+        df.groupby("Category")["Amount"].sum().plot(kind="bar", ax=ax)
+        ax.set_title("Total per Category")
+        ax.set_ylabel("USD")
+        st.pyplot(fig)
 
-    # Pie Chart
-    st.subheader("Pie Chart — Spending Distribution")
-    fig2, ax2 = plt.subplots()
-    ax2.pie(category_totals.values, labels=category_totals.index, autopct="%1.1f%%")
-    ax2.set_title("Expense Distribution")
-    st.pyplot(fig2)
+    with t2:
+        fig, ax = plt.subplots()
+        df.groupby("Category")["Amount"].sum().plot(kind="pie", autopct="%1.1f%%", ax=ax)
+        ax.set_ylabel("")
+        ax.set_title("Expense Distribution")
+        st.pyplot(fig)
 
-# ----------------------------
-# AI Spending Analysis
-# ----------------------------
-st.header("🤖 AI Expense Insights")
+    # Trend
+    st.subheader("📅 Daily Spending Trend")
+    trend = df.groupby("Date")["Amount"].sum().reset_index()
+    fig, ax = plt.subplots()
+    ax.plot(trend["Date"], trend["Amount"], marker="o")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("USD")
+    ax.set_title("Spending Over Time")
+    st.pyplot(fig)
 
-if st.button("Generate Insights"):
-    if st.session_state.expenses.empty:
-        st.warning("Add some expenses first!")
-    else:
-        df = st.session_state.expenses
+    # AI Analysis
+    st.subheader("🤖 AI Insights via Groq")
+    if st.button("Analyze My Spending"):
+        with st.spinner("Groq analyzing your expenses..."):
+            text_data = df.to_string(index=False)
+            prompt = f"""
+            Analyze these expenses. Identify spending patterns, overspending areas, and give 
+            practical strategies to save money and balance the budget.
 
-        # Prepare summary for LLM
-        expense_text = df.to_string(index=False)
+            Expenses:
+            {text_data}
+            """
+            try:
+                result = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                )
+                st.markdown("### 💡 AI Recommendations:")
+                st.write(result.choices[0].message.content)
+            except Exception as e:
+                st.error(f"Groq request failed: {e}")
+else:
+    st.info("No expenses yet. Add your first one above!")
 
-        prompt = f"""
-        Analyze the following expense data:
-
-        {expense_text}
-
-        Provide:
-        1. Key spending patterns.
-        2. Categories where the user overspends.
-        3. Monthly or weekly spending trends.
-        4. Personalized strategies to manage expenses.
-        5. Any anomalies or sudden spikes.
-
-        Keep the explanation clear, structured, and actionable.
-        """
-
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile"
-        )
-
-        insights = response.choices[0].message.content
-        st.write(insights)
+st.markdown("---")
+st.caption("Built with ❤️ using Streamlit + Groq")
